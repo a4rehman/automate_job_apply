@@ -46,6 +46,7 @@ yarn-error.log*
 
 # App specific
 backend/job_automation.db
+backend/test_agent_suite.db
 backend/uploads/
 backend/browser_profiles/
 
