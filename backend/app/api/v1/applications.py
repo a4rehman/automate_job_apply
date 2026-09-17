@@ -11,7 +11,7 @@ from app.schemas.application import (
     ApplicationResponse, ApplicationDetailResponse,
     PrepareApplicationRequest, ApplicationAnswerCreate,
     ApplicationAnswerResponse, ApplicationUpdate,
-    ApprovalRequest, SubmitRequest,
+    ApprovalRequest, SubmitRequest, ApplicationStatusUpdate,
 )
 from app.services.application_service import application_service
 from app.services.audit_service import audit_service
@@ -219,7 +219,7 @@ async def mark_application_submitted(
 @router.patch("/{application_id}/status", response_model=ApplicationResponse)
 async def update_application_status(
     application_id: int,
-    data: dict,
+    data: ApplicationStatusUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -230,9 +230,12 @@ async def update_application_status(
     if not app:
         raise HTTPException(status_code=404, detail="Application not found")
 
-    new_status = data.get("status")
-    if new_status:
-        app.status = getattr(ApplicationStatus, new_status, new_status)
+    new_status = data.status.upper()
+    valid_statuses = {s.value for s in ApplicationStatus} | {s.name for s in ApplicationStatus}
+    if new_status not in valid_statuses:
+        raise HTTPException(status_code=400, detail=f"Invalid status '{new_status}'. Allowed: {list(valid_statuses)}")
+
+    app.status = getattr(ApplicationStatus, new_status, new_status)
     await db.commit()
     await db.refresh(app)
     job_q = await db.execute(select(Job).where(Job.id == app.job_id))

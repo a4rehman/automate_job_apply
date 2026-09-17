@@ -45,8 +45,8 @@ yarn-error.log*
 !.env.example
 
 # App specific
-backend/job_automation.db
-backend/test_agent_suite.db
+*.db
+*.sqlite
 backend/uploads/
 backend/browser_profiles/
 

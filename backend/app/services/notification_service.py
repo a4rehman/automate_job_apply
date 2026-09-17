@@ -1,3 +1,4 @@
+import asyncio
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -49,20 +50,24 @@ class NotificationService:
 
     @staticmethod
     async def send_email(subject: str, body: str, to_email: str) -> bool:
-        try:
+        if not settings.SMTP_HOST or not settings.SMTP_USER:
+            return False
+        def _sync_send():
             msg = MIMEMultipart()
             msg["From"] = settings.SMTP_FROM
             msg["To"] = to_email
             msg["Subject"] = f"[AI Job Agent] {subject}"
             msg.attach(MIMEText(body, "plain"))
 
-            # Run in thread or async SMTP
-            server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT)
+            server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10)
             server.starttls()
             server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
             server.send_message(msg)
             server.quit()
             return True
+
+        try:
+            return await asyncio.to_thread(_sync_send)
         except Exception as e:
             logger.warning(f"Could not send email alert: {e}")
             return False

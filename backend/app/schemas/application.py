@@ -34,6 +34,9 @@ class ApplicationUpdate(BaseModel):
     salary_offered: Optional[float] = None
     is_user_approved: Optional[bool] = None
 
+class ApplicationStatusUpdate(BaseModel):
+    status: str = Field(..., description="Target application status (e.g., PENDING_APPROVAL, APPROVED, APPLIED, INTERVIEW, OFFER, REJECTED)")
+
 class ApplicationResponse(BaseModel):
     id: int
     user_id: int

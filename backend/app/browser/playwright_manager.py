@@ -34,7 +34,7 @@ class PlaywrightManager:
                 headless=headless,
                 viewport={"width": 1280, "height": 900},
                 locale="en-US",
-                args=["--disable-blink-features=AutomationControlled"],
+                args=["--no-sandbox", "--disable-dev-shm-usage"],
             )
             logger.info("Playwright browser launched with persistent profile.")
         except ImportError:

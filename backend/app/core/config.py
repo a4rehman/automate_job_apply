@@ -1,4 +1,5 @@
 import os
+import secrets
 from typing import List, Union
 from pydantic import AnyHttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -14,10 +15,10 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     
     # Security
-    SECRET_KEY: str = "super-secret-key-change-in-production-job-agent-2026"
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "insecure-dev-secret-key-job-agent-change-in-prod")
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
-    FERNET_KEY: str = "dGVzdC1rZXktMzItYnl0ZXMtc3RyaW5nLWZvci1mZXJuZXQ="  # Default fallback, override in production
+    FERNET_KEY: str = ""  # Generated dynamically if not provided in env
     
     # Database
     DATABASE_URL: str = "sqlite+aiosqlite:///./job_automation.db"
@@ -72,10 +73,16 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
+    @field_validator("SECRET_KEY", mode="before")
+    def validate_secret_key(cls, v, info):
+        if not v or v == "super-secret-key-change-in-production-job-agent-2026":
+            # For testing/dev generate secure key if not explicitly set
+            return os.getenv("SECRET_KEY", secrets.token_urlsafe(32))
+        return v
+
     @field_validator("FERNET_KEY", mode="before")
     def ensure_valid_fernet_key(cls, v):
         if not v or v == "dGVzdC1rZXktMzItYnl0ZXMtc3RyaW5nLWZvci1mZXJuZXQ=":
-            # Generate a consistent or valid URL-safe base64 32-byte key
             return Fernet.generate_key().decode()
         return v
 

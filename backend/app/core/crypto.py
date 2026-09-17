@@ -8,8 +8,8 @@ class CryptoService:
         try:
             self.cipher = Fernet(fernet_key.encode() if isinstance(fernet_key, str) else fernet_key)
         except Exception:
-            # Fallback to generating a deterministic safe 32-byte key if corrupted
-            valid_key = base64.urlsafe_b64encode(b"0" * 32)
+            # Fallback to generating a valid safe 32-byte Fernet key if invalid
+            valid_key = Fernet.generate_key()
             self.cipher = Fernet(valid_key)
 
     def encrypt(self, plain_text: str) -> str:
