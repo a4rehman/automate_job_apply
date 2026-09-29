@@ -42,9 +42,15 @@ class JobMatchResponse(BaseModel):
     semantic_score: float
     location_score: float
     salary_score: float
+    seniority_score: float = 0.0
+    confidence: float = 0.0
     matching_skills: List[str]
     missing_skills: List[str]
+    concerns: List[str] = []
     reasoning: str
+    match_reasons: List[str] = []
+    decision: str = "HUMAN_REVIEW"
+    requires_human_review: bool = True
     recommendation: str
     analyzed_at: datetime
 
@@ -79,6 +85,8 @@ class JobSourceResponse(BaseModel):
     supports_auto_submit: bool
     requires_user_approval: bool
     last_polled_at: Optional[datetime] = None
+    health_status: str = "healthy"
+    consecutive_failures: int = 0
 
     class Config:
         from_attributes = True

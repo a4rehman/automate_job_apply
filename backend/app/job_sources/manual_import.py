@@ -23,6 +23,7 @@ class ManualJobImporter:
             company=company,
             description=description
         )
+        exp_fallback = 0.0 if not analysis.get("experience_years_required") else analysis["experience_years_required"]
 
         return NormalizedJob(
             title=title.strip(),
@@ -40,5 +41,5 @@ class ManualJobImporter:
             skills=analysis.get("skills", []),
             requirements=analysis.get("required_skills", []),
             preferred_skills=analysis.get("preferred_skills", []),
-            experience_years_required=analysis.get("experience_years_required", 2.0)
+            experience_years_required=exp_fallback
         )

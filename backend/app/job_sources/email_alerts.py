@@ -30,10 +30,17 @@ class EmailAlertJobSource(JobSource):
                 company = title_match.group(2).strip()
             else:
                 title = subject or "Job Alert Position"
-                company = "Alert Source"
+                company = "Unknown"
 
             url_match = re.search(r'https?://[^\s<>"]+', body)
             job_url = url_match.group(0) if url_match else ""
+
+            tech_keywords = [
+                "Python", "FastAPI", "Machine Learning", "Deep Learning", "LLM",
+                "LangChain", "PyTorch", "TensorFlow", "SQL", "Docker", "Kubernetes",
+                "AWS", "RAG", "TypeScript", "React",
+            ]
+            skills = [kw for kw in tech_keywords if re.search(rf'\b{re.escape(kw)}\b', body, re.IGNORECASE)]
 
             return NormalizedJob(
                 title=title,
@@ -44,10 +51,10 @@ class EmailAlertJobSource(JobSource):
                 description=body[:2000],
                 job_url=job_url,
                 source_name=self.name,
-                skills=["Python", "AI"],
-                requirements=["Python"],
-                preferred_skills=[],
-                experience_years_required=2.0
+                skills=skills,
+                requirements=skills[:3],
+                preferred_skills=skills[3:],
+                experience_years_required=0.0
             )
         except Exception as e:
             logger.error(f"Failed to normalize email alert: {e}")

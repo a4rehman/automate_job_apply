@@ -35,7 +35,7 @@ async def list_jobs(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    query = select(Job).order_by(Job.match_score.desc(), Job.detected_date.desc())
+    query = select(Job).order_by(Job.match_score.desc(), Job.discovered_at.desc())
 
     if search:
         term = f"%{search}%"
@@ -79,7 +79,7 @@ async def list_jobs(
             skills=job.skills or [],
             experience_years_required=job.experience_years_required,
             posted_date=job.posted_date,
-            detected_date=job.detected_date,
+            detected_date=job.discovered_at,
             match_score=job.match_score,
             status=job.status,
             created_at=job.created_at,
@@ -125,7 +125,7 @@ async def get_job_detail(
         skills=job.skills or [],
         experience_years_required=job.experience_years_required,
         posted_date=job.posted_date,
-        detected_date=job.detected_date,
+        detected_date=job.discovered_at,
         match_score=job.match_score,
         status=job.status,
         created_at=job.created_at,
@@ -211,7 +211,7 @@ async def create_job_manually(
         preferred_skills=job.preferred_skills or [],
         skills=job.skills or [],
         experience_years_required=job.experience_years_required,
-        posted_date=job.posted_date, detected_date=job.detected_date,
+        posted_date=job.posted_date, detected_date=job.discovered_at,
         match_score=job.match_score, status=job.status,
         created_at=job.created_at,
     )

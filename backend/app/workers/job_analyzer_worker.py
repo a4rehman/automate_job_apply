@@ -1,4 +1,5 @@
 from typing import List, Dict, Any
+from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.job import Job, JobMatch, JobStatus
@@ -8,6 +9,7 @@ from app.models.notification import NotificationLevel
 from app.services.matching_engine import matching_engine
 from app.services.notification_service import notification_service
 from app.services.audit_service import audit_service
+from app.core.config import settings
 from app.core.logging_config import logger
 
 class JobAnalyzerWorker:
@@ -35,7 +37,7 @@ class JobAnalyzerWorker:
 
         # Fetch jobs with NEW status
         jobs_res = await db.execute(
-            select(Job).where(Job.status == JobStatus.NEW).order_by(Job.detected_date.desc()).limit(limit)
+            select(Job).where(Job.status == JobStatus.NEW).order_by(Job.discovered_at.desc()).limit(limit)
         )
         new_jobs = jobs_res.scalars().all()
         analyzed_count = 0
@@ -51,36 +53,57 @@ class JobAnalyzerWorker:
 
                 score = match_result["overall_score"]
                 job.match_score = score
-                
-                # Determine status
-                if score >= 90.0:
+
+                # Determine status based on decision and score
+                decision_cat = match_result.get("decision", "HUMAN_REVIEW")
+                if decision_cat == "HIGH_MATCH" or score >= (settings.HIGH_MATCH_THRESHOLD * 100):
                     job.status = JobStatus.HIGH_MATCH
-                elif score >= 75.0:
+                elif decision_cat == "HUMAN_REVIEW" or score >= (settings.REVIEW_THRESHOLD * 100):
                     job.status = JobStatus.ANALYZED
                 else:
                     job.status = JobStatus.LOW_MATCH
 
-                # Create or update JobMatch
-                job_match = JobMatch(
-                    job_id=job.id,
-                    user_id=user.id,
+                # Create or update JobMatch (one row per job+user, enforced by
+                # a unique constraint) so re-analysis never duplicates rows.
+                match_values = dict(
                     overall_score=score,
-                    skills_score=match_result["skills_score"],
-                    role_score=match_result["role_score"],
-                    experience_score=match_result["experience_score"],
-                    semantic_score=match_result["semantic_score"],
-                    location_score=match_result["location_score"],
-                    salary_score=match_result["salary_score"],
-                    matching_skills=match_result["matching_skills"],
-                    missing_skills=match_result["missing_skills"],
-                    reasoning=match_result["reasoning"],
-                    recommendation=match_result["recommendation"]
+                    skills_score=match_result.get("skills_score", 0.0),
+                    role_score=match_result.get("role_score", 0.0),
+                    experience_score=match_result.get("experience_score", 0.0),
+                    seniority_score=match_result.get("seniority_score", 0.0),
+                    semantic_score=match_result.get("semantic_score", 0.0),
+                    location_score=match_result.get("location_score", 0.0),
+                    salary_score=match_result.get("salary_score", 0.0),
+                    # Never assume confidence we did not measure.
+                    confidence=match_result.get("confidence", 0.0),
+                    matching_skills=match_result.get("matching_skills", []),
+                    missing_skills=match_result.get("missing_skills", []),
+                    concerns=match_result.get("concerns", []),
+                    application_method=match_result.get("application_method", "unknown"),
+                    decision=decision_cat,
+                    requires_human_review=match_result.get("requires_human_review", True),
+                    reasoning=match_result.get("reasoning", ""),
+                    match_reasons=match_result.get("match_reasons", []),
+                    recommendation=match_result.get("recommendation", "RECOMMENDED"),
+                    analyzed_at=datetime.now(timezone.utc),
                 )
-                db.add(job_match)
 
-                # If score >= 90%, trigger high priority notification
-                if score >= 90.0:
-                    top_skills = ", ".join(match_result["matching_skills"][:4])
+                existing_match = await db.execute(
+                    select(JobMatch).where(
+                        JobMatch.job_id == job.id, JobMatch.user_id == user.id
+                    )
+                )
+                job_match = existing_match.scalar_one_or_none()
+                if job_match is None:
+                    job_match = JobMatch(job_id=job.id, user_id=user.id, **match_values)
+                    db.add(job_match)
+                else:
+                    for key, val in match_values.items():
+                        setattr(job_match, key, val)
+
+                # If high match, trigger high priority notification
+                if job.status == JobStatus.HIGH_MATCH:
+                    top_skills = ", ".join(match_result.get("matching_skills", [])[:4])
                     await notification_service.create_notification(
                         db=db,
                         user_id=user.id,
@@ -100,3 +123,4 @@ class JobAnalyzerWorker:
         return analyzed_count
 
 job_analyzer_worker = JobAnalyzerWorker()
+

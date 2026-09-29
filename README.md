@@ -1,138 +1,131 @@
 # AI Job Application Automation Agent
 
-An enterprise-grade, TOS-compliant autonomous AI agent designed to discover, match, analyze, tailor, and prepare job applications with strict **human-in-the-loop review**.
+An enterprise-grade, TOS-compliant autonomous AI agent that discovers, matches,
+analyzes, and **prepares** tailored job applications with a strict
+**human-in-the-loop approval gate**. It never fabricates submissions and runs
+safe dry-run cycles by default.
 
 ---
 
-## 🌟 Key Capabilities & Features
+## 🌟 Key Capabilities
 
-### 1. Job Discovery Engine
-- **Multi-Source Feeds**: Built-in adapters for RemoteOK (RSS), WeWorkRemotely (RSS), Remotive (API), and Arbeitnow (API).
-- **Custom Adapters**: Modular architecture supporting easily extensible scrapers and company career portal webhooks.
-- **Smart Duplicate Prevention**: Cryptographic description hashing and URL normalization to eliminate duplicate listings across providers.
-- **Manual & CSV Importer**: Batch import job listings directly from spreadsheets or manual paste.
-
-### 2. AI Semantic Matching & Analysis
-- **Entity Extraction**: Parses PDF/DOCX resumes to extract verified technical skills, soft skills, seniority, and career milestones.
-- **Multi-Factor Match Scoring**:
-  - **Skills Match**: Weighted semantic coverage of required and preferred skills.
-  - **Experience Alignment**: Calculates seniority and years of domain experience fit.
-  - **Role & Title Similarity**: Measures domain and level alignment.
-  - **Composite Score (0–100%)**: Clear, transparent match scores with detailed rationale and missing skill flags.
-- **LLM Abstraction**: Compatible with OpenAI, Azure OpenAI, Anthropic, Ollama, and local vLLM instances.
-
-### 3. Application Package Synthesis (Human-In-The-Loop)
-- **AI Tailored Resumes**: Generates role-targeted accomplishment bullets highlighting exact competencies requested in the job description.
-- **Bespoke Cover Letters**: Generates crisp, high-impact, professional cover letters (strictly under 300 words).
-- **Screening Q&A Generator**: Predicts and synthesizes well-structured candidate answers for common screening questions.
-- **Strict Human Approval Gate**: Applications remain in `READY_FOR_REVIEW` until you review, edit in-place, and click `Approve`.
-
-### 4. Background Automation & Scheduler
-- **APScheduler Service**: Configurable automated polling intervals (5m, 10m, 30m, 60m).
-- **Match Threshold Filter**: Only queue applications meeting candidate-specified match thresholds (e.g. ≥ 75%).
-- **Immutable Audit Logging**: Every system action, automated scan, and manual user decision is logged with tamper-evident records.
-
-### 5. Modern Dashboard & Visual Analytics
-- **Live Funnel & KPIs**: Track conversion rates from Discovered → Match Filtered → Prepared → Approved → Submitted → Interviews.
-- **Score Distribution Visualizer**: Inspect match distributions across all tracked positions.
-- **Notification Center**: Real-time alerts for newly discovered high-match opportunities.
+1. **Job Discovery Engine** — Multi-source RSS/API adapters (WeWorkRemotely,
+   Remotive, Arbeitnow), CSV & manual import, email alert parsing. RemoteOK was
+   removed after its feed was verified to return HTTP 410 Gone. Cryptographic
+   description hashing + URL normalization dedupe across all providers, backed
+   by partial and unique DB constraints so dedupe cannot be bypassed by a
+   concurrent worker. `JobSourceConfig` rows back each source (with per-source
+   health, rate-limit, and enable gating seeded at startup).
+2. **AI Semantic Matching** — Parse PDF/DOCX resumes, verify skills, and produce a
+   transparent 0–100 composite match score (skills coverage + experience + role fit).
+   LLM abstraction (OpenAI-compatible / Ollama / vLLM / Anthropic) with an offline
+   mock fallback so the whole pipeline runs without a live key.
+3. **Application Package Synthesis (Human-In-The-Loop)** — AI-tailored resume bullets,
+   bespoke cover letters, and screening Q&A drafts. Applications sit at
+   `PENDING_APPROVAL` until a human reviews, edits, and explicitly approves.
+4. **Background Automation & Scheduler** — An **hourly worker** (GitHub Actions,
+   Asia/Karachi, `Asia/Karachi` timezone) runs a full cycle: discover → analyze →
+   match gate → prepare → (dry-run submit). Database run-locking, per-run/daily
+   limits, idempotency keys, and audit logging keep it safe and idempotent.
+5. **Dashboard & Analytics** — Streamlit dashboard with live KPIs, job board,
+   application review, automation settings, run history, and a manual "Run Cycle
+   Now" trigger.
 
 ---
 
-## 🏗️ Architecture Overview
+## 🏗️ Architecture
 
-```mermaid
-graph TD
-    A[Job Sources: RSS / REST APIs / CSV] --> B[Job Monitor & Ingestion Worker]
-    B --> C[(PostgreSQL Database)]
-    D[Candidate Resume PDF/DOCX] --> E[Resume Parser AI]
-    E --> F[Candidate Skills & Profile]
-    C --> G[AI Matching Engine]
-    F --> G
-    G --> H{Match Score ≥ Threshold?}
-    H -->|Yes| I[Application Preparation Engine]
-    H -->|No| J[Archived / Low Match]
-    I --> K[Tailored Cover Letter & Q&A Synthesis]
-    K --> L[Pending Review Queue]
-    L --> M[Human Review & Approval UI]
-    M -->|Approve & Submit| N[Application Submitted]
+```
+┌──────────────────────┐         ┌──────────────────────────────┐
+│ GitHub Actions        │         │ Streamlit Cloud              │
+│ hourly worker         │         │ dashboard (app.py)           │
+│ (job discovery, AI    │         │ reads/writes same database   │
+│  analysis, prepare)   │         └──────────────┬───────────────┘
+└───────────┬───────────┘                        │
+            │ polls RSS/API/CSV feeds            │
+            ▼                                    ▼
+      ┌──────────────────────────────────────────────┐
+      │ Supabase PostgreSQL (jobs, apps, settings,   │
+      │ scheduler_runs, notifications, audit)        │
+      └──────────────────────────────────────────────┘
 ```
 
+The worker runs **independently** of Streamlit: GitHub Actions runs the cycle
+hourly (Asia/Karachi), and the Streamlit dashboard reads the shared database.
+
 ---
 
-## 🚀 Quick Start Guide
+## 🚀 Local Setup
 
-### Prerequisites
-- Python 3.12+
-- Node.js 18+ and npm
-- PostgreSQL & Redis (or use Docker Compose)
-
-### 1. Backend Setup
+### 1. Backend + Worker
 
 ```bash
 cd backend
-python -m venv venv
-# On Windows:
-.\venv\Scripts\activate
-# On Linux/macOS:
-source venv/bin/activate
-
+python -m venv .venv
+# Windows: .\.venv\Scripts\activate   |   Linux/macOS: source .venv/bin/activate
 pip install -r requirements.txt
-cp ../.env.example .env
 
-# Run database seed (creates demo AI engineer profile & sample jobs)
+# Configure environment
+Copy-Item ..\.env.example .env    # Windows  |  cp ../.env.example .env  (Linux)
+
+# Create tables, sync source configs, and seed demo data (demo@jobagent.ai / demo1234)
 python -m app.seed
 
-# Start backend server
-uvicorn app.main:app --reload --port 8000
+# Run a full automation cycle in DRY RUN (safe; no real submissions)
+python -m app.workers.hourly_runner
 ```
 
-FastAPI interactive documentation available at: `http://localhost:8000/docs`
-
-### 2. Frontend Setup
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open your browser at: `http://localhost:3000`
-
-**Pre-seeded Demo Credentials:**
-- Email: `alex.mercer@example.com`
-- Password: `Secret123!`
-
----
-
-## 🐳 Docker Deployment
-
-To launch the complete stack with a single command:
-
-```bash
-docker-compose up --build -d
-```
-
-Services started:
-- `job_agent_frontend`: `http://localhost:3000`
-- `job_agent_backend`: `http://localhost:8000`
-- `job_agent_postgres`: Port 5432
-- `job_agent_redis`: Port 6379
-
----
-
-## 🧪 Running Automated Tests
+### 2. Run the API server
 
 ```bash
 cd backend
-pytest
+uvicorn app.main:app --reload --port 8000    # interactive docs at http://localhost:8000/docs
 ```
+
+### 3. Run the Streamlit dashboard
+
+```bash
+pip install -r requirements.txt   # root requirements.txt includes Streamlit
+streamlit run app.py              # opens on http://localhost:8501
+```
+
+> Note: `backend/requirements.txt` covers the API + worker. The **root**
+> `requirements.txt` covers Streamlit Cloud. Run the pipeline with `python -c
+> "import asyncio; from app.core.database import init_db; asyncio.run(init_db())"`
+> first if your `DATABASE_URL` is PostgreSQL.
 
 ---
 
-## 🛡️ Terms of Service & Ethical Compliance Notice
+## 🧪 Tests
 
-This system is engineered strictly with **ethical automation standards**:
-1. **Zero Anti-Bot / CAPTCHA Evasion**: Does not attempt to bypass platform CAPTCHAs, bot detections, or scrape unauthorized endpoints.
-2. **Human-in-the-Loop**: Every submission is prepared as an offline draft and requires direct human review and explicit authorization.
-3. **Open Standards**: Relies primarily on public RSS feeds, permitted developer APIs, and direct user file imports.
+```bash
+cd backend
+python -m pytest tests -q
+```
+
+The suite covers pipeline idempotency (run locking, stale-lock recovery), URL/description
+dedup hashing, semantic matching fallback (AI failure ⇒ score 0.0, never 85), skill/role/
+experience scoring edge cases, daily-limit enforcement, dry-run `WOULD_SUBMIT` behavior,
+per-source failure isolation, source config sync/gating, and the user-email
+(pipeline reads email from `User`, not `UserProfile`) regression.
+
+---
+
+## ☁️ Deployment
+
+See **[DEPLOYMENT.md](DEPLOYMENT.md)** for the full production guide: Supabase
+setup, GitHub secrets, the hourly GitHub Actions workflow, Streamlit Cloud
+deployment, and the `DRY_RUN` safety model.
+
+---
+
+## 🛡️ TOS & Ethical Compliance
+
+1. **No CAPTCHA / anti-bot evasion**: The agent never bypasses CAPTCHAs, bot
+   detection, or unauthorized scraping.
+2. **Human-in-the-loop**: Applications are prepared as drafts and require explicit
+   human approval before any submission.
+3. **Safe by default**: `DRY_RUN=true` is the default; no real application is
+   ever submitted without a human explicitly approving and enabling it.
+4. **Open standards**: Uses public RSS/API feeds, permissive job portals, and
+   direct file imports.

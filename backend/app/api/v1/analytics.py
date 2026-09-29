@@ -24,7 +24,7 @@ async def get_dashboard_analytics(
 
     # Jobs found today
     jobs_today = await db.execute(
-        select(func.count(Job.id)).where(Job.detected_date >= today_start)
+        select(func.count(Job.id)).where(Job.discovered_at >= today_start)
     )
     jobs_found_today = jobs_today.scalar() or 0
 

@@ -66,6 +66,7 @@ class AIClient:
         self._provider = getattr(settings, "AI_PROVIDER", "openai").lower()
         self._openai_client: Optional[AsyncOpenAI] = None
         self._hf_client: Optional[HuggingFaceClient] = None
+        self._gemini_key: str = ""
         if self._provider == "openai":
             if settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip() != "":
                 self._openai_client = AsyncOpenAI(
@@ -74,6 +75,14 @@ class AIClient:
                 )
         elif self._provider == "huggingface":
             self._hf_client = HuggingFaceClient()
+        elif self._provider == "gemini":
+            # Gemini is served by app.ai.decision_engine.gemini_provider, which
+            # owns its own client built from GEMINI_API_KEY. Recognizing it here
+            # avoids a spurious "unknown provider" warning on the default config
+            # and keeps is_configured honest about what this client can serve.
+            self._gemini_key = (
+                settings.GEMINI_API_KEY.strip() if settings.GEMINI_API_KEY else ""
+            )
         else:
             logger.warning(f"Unknown AI_PROVIDER '{self._provider}'. Defaulting to mock fallback.")
 
@@ -83,6 +92,9 @@ class AIClient:
             return bool(self._openai_client and settings.OPENAI_API_KEY and len(settings.OPENAI_API_KEY.strip()) > 5)
         if self._provider == "huggingface":
             return bool(self._hf_client and self._hf_client.is_configured)
+        if self._provider == "gemini":
+            # Delegated to the Gemini provider; this client does not serve it.
+            return bool(self._gemini_key and len(self._gemini_key) > 5)
         return False
 
     async def generate_chat_completion(

@@ -1,7 +1,9 @@
+import os
 import hashlib
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import AsyncSessionLocal
+from app.core.config import settings
 from app.core.security import get_password_hash
 from app.core.logging_config import logger
 from app.models.user import User, UserProfile
@@ -11,19 +13,25 @@ from app.models.application import Application, ApplicationStatus
 from app.models.automation import AutomationSettings
 from app.models.notification import Notification, NotificationLevel
 
+SEED_DEMO_DATA = os.getenv("SEED_DEMO_DATA", "false").lower() == "true"
 
 async def seed_database():
     """Seed database with a demo AI Engineer profile and realistic sample jobs."""
+    if not SEED_DEMO_DATA:
+        logger.info("SEED_DEMO_DATA is false. Skipping demo data seeding.")
+        return
+
     async with AsyncSessionLocal() as db:
         from sqlalchemy import select
 
-        # Check if demo user already exists
+        from app.services.source_config_service import sync_source_configs
+        await sync_source_configs(db)
+
         existing = await db.execute(select(User).where(User.email == "demo@jobagent.ai"))
         if existing.scalar_one_or_none():
             logger.info("Database already seeded.")
             return
 
-        # Create demo user
         user = User(
             email="demo@jobagent.ai",
             hashed_password=get_password_hash("demo1234"),
@@ -32,7 +40,6 @@ async def seed_database():
         db.add(user)
         await db.flush()
 
-        # Create AI Engineer profile
         profile = UserProfile(
             user_id=user.id,
             full_name="Alex Johnson",
@@ -63,7 +70,6 @@ async def seed_database():
         )
         db.add(profile)
 
-        # Skills
         demo_skills = [
             ("Python", "LANGUAGES", 5, 5.0),
             ("Machine Learning", "ML_AI", 5, 4.0),
@@ -88,10 +94,8 @@ async def seed_database():
         for name, cat, prof, yrs in demo_skills:
             db.add(Skill(user_id=user.id, name=name, category=cat, proficiency=prof, years_experience=yrs))
 
-        # Automation settings
         db.add(AutomationSettings(user_id=user.id))
 
-        # Sample jobs
         sample_jobs = [
             {
                 "title": "Senior AI Engineer",
@@ -207,14 +211,13 @@ async def seed_database():
                 experience_years_required=j.get("experience_years_required", 2.0),
                 job_url=j.get("job_url", ""),
                 posted_date=now - timedelta(hours=i * 6),
-                detected_date=now - timedelta(hours=i * 2),
+                discovered_at=now - timedelta(hours=i * 2),
                 status=JobStatus.NEW,
             )
             db.add(job)
 
         await db.commit()
 
-        # Welcome notification
         db.add(Notification(
             user_id=user.id,
             title="👋 Welcome to AI Job Agent!",
@@ -225,3 +228,14 @@ async def seed_database():
         await db.commit()
 
         logger.info("✅ Database seeded with demo AI Engineer profile and 5 sample jobs.")
+
+
+if __name__ == "__main__":
+    import asyncio
+    from app.core.database import init_db
+
+    async def main():
+        await init_db()
+        await seed_database()
+
+    asyncio.run(main())

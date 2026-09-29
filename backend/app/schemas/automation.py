@@ -35,3 +35,22 @@ class ManualRunResponse(BaseModel):
     jobs_discovered: int
     jobs_analyzed: int
     applications_prepared: int
+
+class SchedulerRunResponse(BaseModel):
+    id: int
+    run_id: str
+    status: str
+    started_at: datetime
+    finished_at: Optional[datetime] = None
+    jobs_discovered: int = 0
+    jobs_analyzed: int = 0
+    applications_prepared: int = 0
+    applications_submitted: int = 0
+    failures: int = 0
+    error_message: str = ""
+    created_by: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True

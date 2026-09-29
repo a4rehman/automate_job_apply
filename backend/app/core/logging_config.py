@@ -28,7 +28,7 @@ class SensitiveDataFilter(logging.Filter):
 def setup_logging():
     logger = logging.getLogger("job_agent")
     logger.setLevel(logging.INFO)
-    
+
     handler = logging.StreamHandler(sys.stdout)
     handler.setLevel(logging.INFO)
     formatter = logging.Formatter(
@@ -37,11 +37,45 @@ def setup_logging():
     )
     handler.setFormatter(formatter)
     handler.addFilter(SensitiveDataFilter())
-    
+
+    # Windows consoles default to a legacy codepage (cp1252), which makes any
+    # non-ASCII log line (emoji, accented characters) raise inside the logging
+    # handler. Reconfigure to UTF-8 so logs never break a run.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+    # A logging failure must never abort a production cycle.
+    logging.raiseExceptions = False
+
+    # Persist a rotating log file as well as stdout. The hourly Actions worker
+    # needs durable per-run logs to debug a failure after the console is gone.
+    # Any failure here is swallowed: logs must never block a run.
+    try:
+        import os
+        from logging.handlers import RotatingFileHandler
+
+        log_dir = os.path.join(os.getcwd(), "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        file_handler = RotatingFileHandler(
+            os.path.join(log_dir, "automation.log"),
+            maxBytes=5 * 1024 * 1024,
+            backupCount=3,
+            encoding="utf-8",
+        )
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(formatter)
+        file_handler.addFilter(SensitiveDataFilter())
+        handlers = [handler, file_handler]
+    except Exception:
+        handlers = [handler]
+
     # Avoid duplicate handlers if called multiple times
     if not logger.handlers:
-        logger.addHandler(handler)
-        
+        for h in handlers:
+            logger.addHandler(h)
+
     return logger
 
 logger = setup_logging()

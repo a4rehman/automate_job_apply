@@ -1,0 +1,89 @@
+name: Hourly Job Automation
+
+on:
+  schedule:
+    # Every hour, at minute 5 (avoid top-of-hour contention), Asia/Karachi = UTC+5
+    - cron: '5 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: hourly-job-automation
+  cancel-in-progress: false
+
+env:
+  ENVIRONMENT: production
+  DEBUG: 'false'
+  SEED_DEMO_DATA: 'false'
+  DRY_RUN: 'true'
+  AUTOMATION_TIMEZONE: 'Asia/Karachi'
+  MAX_APPLICATIONS_PER_RUN: '10'
+  MAX_APPLICATIONS_PER_DAY: '30'
+  MIN_MATCH_SCORE: '85'
+
+jobs:
+  automate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Report scheduled run
+        run: |
+          echo "Scheduled automation cycle started at $(date -u '+%Y-%m-%d %H:%M UTC') (Asia/Karachi: $(TZ=Asia/Karachi date '+%Y-%m-%d %H:%M'))"
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Run database migrations / schema init
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DB_SSL_MODE: ${{ secrets.DB_SSL_MODE || 'require' }}
+        # Idempotent: creates missing tables, then applies pending migrations so
+        # columns added after the database was first created are actually added.
+        run: python -m app.workers.hourly_runner --migrate-only
+
+      - name: Run hourly automation worker
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DB_SSL_MODE: ${{ secrets.DB_SSL_MODE || 'require' }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          # AI_PROVIDER defaults to "gemini", so GEMINI_API_KEY is the credential
+          # the decision engine actually reads. Without it the cycle still runs
+          # but silently falls back to the deterministic offline evaluator.
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          # Master submission switch. Keep false in production: without it the
+          # worker refuses any real submission regardless of other settings.
+          AUTO_SUBMIT_ENABLED: ${{ secrets.AUTO_SUBMIT_ENABLED || 'false' }}
+          DRY_RUN: ${{ secrets.DRY_RUN || 'true' }}
+        run: python -m app.workers.hourly_runner
+
+      - name: Upload worker logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: worker-logs
+          path: backend/logs/**
+          # A migration-only failure happens before any log file is written;
+          # this step must not mask the real error.
+          if-no-files-found: ignore
+          retention-days: 7

@@ -27,25 +27,19 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("✅ Database initialized")
 
-    # Seed demo data
+    # Seed automated job source configs (enable/disable gating)
+    from app.core.database import AsyncSessionLocal
+    from app.services.source_config_service import sync_source_configs
+    async with AsyncSessionLocal() as db:
+        await sync_source_configs(db)
+    logger.info("✅ Job source configs synchronized")
+
+    # Seed demo data only if explicitly enabled
     from app.seed import seed_database
     await seed_database()
 
-    # Start background scheduler (optional, can be disabled)
-    try:
-        from app.workers.scheduler import start_scheduler
-        start_scheduler()
-    except Exception as e:
-        logger.warning(f"Scheduler start skipped: {e}")
-
     yield
 
-    # Shutdown
-    try:
-        from app.workers.scheduler import stop_scheduler
-        stop_scheduler()
-    except Exception:
-        pass
     logger.info("🛑 Application shutting down")
 
 
@@ -88,9 +82,27 @@ async def root():
         "version": settings.VERSION,
         "docs": "/docs",
         "status": "running",
+        "environment": settings.ENVIRONMENT,
+        "dry_run": settings.DRY_RUN,
     }
 
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy"}
+    return {
+        "status": "healthy",
+        "database": "connected",
+        "project": settings.PROJECT_NAME,
+        "version": settings.VERSION,
+        "environment": settings.ENVIRONMENT,
+    }
+
+
+@app.get("/ready")
+async def ready():
+    return {
+        "status": "ready",
+        "database": "connected",
+        "ai_provider": settings.AI_PROVIDER,
+        "ai_configured": settings.OPENAI_API_KEY != "",
+    }

@@ -49,6 +49,14 @@ yarn-error.log*
 *.sqlite
 backend/uploads/
 backend/browser_profiles/
+backend/logs/
+uploads/
+browser_profiles/
+test_agent_suite.db
+backend/test_agent_suite.db
+
+# Streamlit
+.streamlit/secrets.toml
 
 # OS specific
 .DS_Store

@@ -29,14 +29,20 @@ class CSVJobSource(JobSource):
             else:
                 skills = []
 
+            def _csv_float(val, default=None):
+                try:
+                    return float(val)
+                except (TypeError, ValueError):
+                    return default
+
             return NormalizedJob(
                 title=title,
                 company=company,
-                location=location,
-                remote_type=remote_type,
+                location=str(location),
+                remote_type=str(remote_type).upper(),
                 employment_type=raw.get("employment_type", "FULL_TIME"),
-                salary_min=float(raw["salary_min"]) if raw.get("salary_min") else None,
-                salary_max=float(raw["salary_max"]) if raw.get("salary_max") else None,
+                salary_min=_csv_float(raw.get("salary_min")),
+                salary_max=_csv_float(raw.get("salary_max")),
                 currency=raw.get("currency", "USD"),
                 description=description,
                 job_url=url,
@@ -45,7 +51,7 @@ class CSVJobSource(JobSource):
                 skills=skills,
                 requirements=skills[:4],
                 preferred_skills=skills[4:],
-                experience_years_required=float(raw.get("experience_years_required", 2.0))
+                experience_years_required=_csv_float(raw.get("experience_years_required"), 0.0) or 0.0
             )
         except Exception as e:
             logger.error(f"Error normalizing CSV row: {e}")

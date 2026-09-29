@@ -23,6 +23,7 @@ class User(Base):
     automation_settings: Mapped[Optional["AutomationSettings"]] = relationship("AutomationSettings", back_populates="user", uselist=False, cascade="all, delete-orphan")
     notifications: Mapped[List["Notification"]] = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
     audit_logs: Mapped[List["AuditLog"]] = relationship("AuditLog", back_populates="user", cascade="all, delete-orphan")
+    scheduler_runs: Mapped[List["SchedulerRun"]] = relationship("SchedulerRun", back_populates="user", cascade="all, delete-orphan")
 
 class UserProfile(Base):
     __tablename__ = "user_profiles"
